@@ -257,7 +257,7 @@ def SHIFT_CONDUCTIVITY_IOSSHELL(file_path, shift_Factor):
 
         f_interp = interp1d(x, y, kind='linear', fill_value='extrapolate')
 
-        shifted_x = x - shift_Factor  # advancing if shift_Factor > 0, delaying if < 0
+        shifted_x = x + shift_Factor  # advancing if shift_Factor > 0, delaying if < 0
         shifted_conductivity = f_interp(shifted_x)
 
         df['Conductivity'] = shifted_conductivity
@@ -342,7 +342,7 @@ for j in del_files:
             x = np.arange(len(df))
             y = df['Conductivity'].values
             f_interp = interp1d(x, y, kind='linear', fill_value='extrapolate')
-            df['Conductivity'] = f_interp(x - shift)
+            df['Conductivity'] = f_interp(x + shift)
 
         # Recalculate salinity
         df['Salinity'] = gsw.SP_from_C(df['Conductivity'] * 10, df['Temperature'], df['Pressure'])
