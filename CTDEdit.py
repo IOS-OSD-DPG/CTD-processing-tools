@@ -34,7 +34,7 @@ Main_Window.plot_windows = []
 File_Picker_Button = Main_Window.findChild(QtWidgets.QPushButton, 'FilePickerButton')
 File_Path_Entry=Main_Window.findChild(QtWidgets.QLineEdit, 'FilePathLineEntry')
 Select_Variable_Button = Main_Window.findChild(QtWidgets.QPushButton, 'SelectVariableButton')
-File_Path_Entry.setText("C:/Users/ZHANGD/Downloads/ExampleEditFiles/withoutMLQC/2024-008-0014.del")
+#File_Path_Entry.setText("C:/Users/ZHANGD/Downloads/ExampleEditFiles/withoutMLQC/2024-008-0014.del")
 
 selected_columns = []
 
