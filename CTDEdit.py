@@ -3,8 +3,8 @@ import sys
 import json
 from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtGui import *
-sys.path.append("C:/Users/ZHANGD/Desktop/All Git Repo/osd_data_standardization/src")
-import ios_ascii2nc
+sys.path.append("C:/Users/ZHANGD/Desktop/All Git Repo/ios-shell")
+import ios_shell
 import yaml
 import pandas as pd
 import numpy as np

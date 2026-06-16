@@ -1,4 +1,4 @@
-**Description:**
+9**Description:**
 
 
 
@@ -19,7 +19,7 @@ A PyQt5-based GUI tool for visually inspecting and editing CTD oceanographic pro
 * numpy
 * matplotlib
 * PyYAML
-* ios\_ascii2nc (from the osd\_data\_standardization repo)
+* ios_shell (https://github.com/IOS-OSD-DPG/ios-shell)
 
 
 
