@@ -59,7 +59,7 @@ def show_column_selector():
         return
 
     try:
-        pf = ios_ascii2nc.ios_shell.ShellFile.fromfile(filename=file_path)
+        pf = ios_shell.ShellFile.fromfile(filename=file_path)
         df = pf.to_pandas()
 
     except Exception as e:
