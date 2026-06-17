@@ -1,8 +1,8 @@
-9**Description:**
+**Description:**
 
 
 
-A PyQt5-based GUI tool for visually inspecting and editing CTD oceanographic profile data. 
+A PyQt5-based GUI tool for visually inspecting and editing CTD oceanographic profile data.
 
 
 
@@ -14,12 +14,9 @@ A PyQt5-based GUI tool for visually inspecting and editing CTD oceanographic pro
 
 
 
-* PyQt5
-* pandas
-* numpy
-* matplotlib
-* PyYAML
-* ios_shell (https://github.com/IOS-OSD-DPG/ios-shell)
+* Python 3.11
+* package and version from: requirement.txt
+* ios\_shell (https://github.com/IOS-OSD-DPG/ios-shell)
 
 
 
@@ -32,16 +29,13 @@ A PyQt5-based GUI tool for visually inspecting and editing CTD oceanographic pro
 
 
 1. **Pick a file** — click the file-picker button or paste a path into the text entry. (Accepts .del and .delpred files)
-
 2. **Select variables** — click to select variables for x and y axis.
-
 3. **Edit** — a new plot window opens with one subplot per selected channel
 
    * Click points to toggle their flag.
    * Use box-select for bulk exclusion.
    * Enable batch mode if a flag change should apply across all columns.
-
-4. **Export** — click Export to .ctd. The output is written next to the source file with the .ctd extension. 
+4. **Export** — click Export to .ctd. The output is written next to the source file with the .ctd extension.
 
 
 
@@ -106,38 +100,4 @@ A PyQt5-based GUI tool for visually inspecting and editing CTD oceanographic pro
 
 
 2\. Add a "make good" feature for pre-predicted flags. For .delpred files, points pre-marked bad by the prediction\_flag column start out excluded. A point can be flipped from bad → good via undo only if it was flipped in the current session. Adding make-good feature so falsely-predicted points can be recovered.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
