@@ -66,6 +66,17 @@ def show_column_selector():
         QtWidgets.QMessageBox.warning(Main_Window, "Error", f"Failed to read file:\n{e}")
         return
 
+    # Replace pad values with NaN
+    channel_details = pf.file.channel_details
+    for i in range(min(len(df.columns), len(channel_details))):
+        try:
+            pad_val = float(channel_details[i].pad)
+        except (TypeError, ValueError):
+            continue  # non-numeric pad (e.g. status/flag channels) -- leave as-is
+        col_vals = pd.to_numeric(df.iloc[:, i], errors="coerce")
+        is_pad = np.isclose(col_vals.values, pad_val)
+        df.iloc[is_pad, i] = np.nan
+
     # Create popup window
     dialog = QtWidgets.QDialog(Main_Window)
     dialog.setWindowTitle("Select Variables " + file_name)
