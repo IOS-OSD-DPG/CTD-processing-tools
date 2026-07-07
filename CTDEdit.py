@@ -201,13 +201,30 @@ def open_plot_window(df, selected_columns, file_name, file_path,
         else:
             return
 
-        # Get cursor's relative position (0–1) within the hovered axes
-        hovered_ax = event.inaxes
-        hx_min, hx_max = hovered_ax.get_xlim()
-        hy_min, hy_max = hovered_ax.get_ylim()
+        def clamp_window(new_a, new_b, lo, hi):
+            reversed_order = new_a > new_b
+            w_min, w_max = (new_b, new_a) if reversed_order else (new_a, new_b)
+            width = w_max - w_min
+            allowed = hi - lo
+            if width >= allowed:
+                w_min, w_max = lo, hi
+            elif w_min < lo:
+                w_max += (lo - w_min)
+                w_min = lo
+            elif w_max > hi:
+                w_min -= (w_max - hi)
+                w_max = hi
+            return (w_max, w_min) if reversed_order else (w_min, w_max)
 
-        x_frac = (event.xdata - hx_min) / (hx_max - hx_min) if (hx_max - hx_min) != 0 else 0.5
+        # Cursor's relative position (0-1) within the hovered axes' current
+        # y-range. Used to anchor the y-zoom on whatever pressure the user
+        # is actually pointing at, instead of always zooming toward the
+        # center of the full data range.
+        hovered_ax = event.inaxes
+        hy_min, hy_max = hovered_ax.get_ylim()
         y_frac = (event.ydata - hy_min) / (hy_max - hy_min) if (hy_max - hy_min) != 0 else 0.5
+
+        mode = view_state["mode"]
 
         for pdata in plot_data:
             ax = pdata["ax"]
@@ -215,30 +232,55 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             x_min, x_max = ax.get_xlim()
             y_min, y_max = ax.get_ylim()
 
-            # Map the relative cursor position onto this axes' data range
-            x_anchor = x_min + x_frac * (x_max - x_min)
+            # Zoom the y (pressure) axis, anchored on the cursor's position
+            # (mapped into this subplot's own current y-range, since all
+            # subplots share the y-axis this is normally the same point).
+            oy_min, oy_max = pdata["y_orig"]
             y_anchor = y_min + y_frac * (y_max - y_min)
 
-            new_x_min = x_anchor + (x_min - x_anchor) * scale
-            new_x_max = x_anchor + (x_max - x_anchor) * scale
             new_y_min = y_anchor + (y_min - y_anchor) * scale
             new_y_max = y_anchor + (y_max - y_anchor) * scale
 
-            # Clamp to original data range
-            ox_min, ox_max = pdata["x_orig"]
-            oy_min, oy_max = pdata["y_orig"]
-            x_pad = (ox_max - ox_min) * 0.05
-            y_pad = (oy_max - oy_min) * 0.05
-            new_x_min = max(new_x_min, ox_min - x_pad)
-            new_x_max = min(new_x_max, ox_max + x_pad)
-            # y-axis is inverted so get_ylim() returns (large, small) — clamp accordingly
-            new_y_min = min(new_y_min, oy_max + y_pad)
-            new_y_max = max(new_y_max, oy_min - y_pad)
+            y_pad = (oy_max - oy_min) * 0.05 if oy_max > oy_min else 1.0
+            new_y_min, new_y_max = clamp_window(
+                new_y_min, new_y_max, oy_min - y_pad, oy_max + y_pad
+            )
+
+            # Auto-fit x to whatever data actually falls inside the new
+            # y-window, so the x range recenters/rescales on the values
+            # that are actually visible instead of just scaling around a
+            # fixed anchor (which can push the visible data off to one side).
+            y_lo, y_hi = sorted((new_y_min, new_y_max))
+            y_vals = pdata["y"]
+            x_vals = pdata["x"]
+            visible_mask = (y_vals >= y_lo) & (y_vals <= y_hi)
+            if mode == "good" and pdata["is_good"].any():
+                visible_mask &= pdata["is_good"]
+            xs_visible = x_vals[visible_mask]
+
+            with np.errstate(all="ignore"):
+                vx_min = np.nanmin(xs_visible) if xs_visible.size else np.nan
+                vx_max = np.nanmax(xs_visible) if xs_visible.size else np.nan
+
+            if np.isfinite(vx_min) and np.isfinite(vx_max):
+                if vx_max > vx_min:
+                    x_pad = (vx_max - vx_min) * 0.15
+                else:
+                    # Only one distinct x value visible — fall back to a
+                    # small fixed padding based on the full data extent.
+                    ox_min, ox_max = pdata["x_orig"]
+                    x_pad = (ox_max - ox_min) * 0.05 if ox_max > ox_min else 1.0
+                new_x_min, new_x_max = vx_min - x_pad, vx_max + x_pad
+            else:
+                # No data falls in this y-window — leave the x view as-is.
+                new_x_min, new_x_max = x_min, x_max
 
             ax.set_xlim(new_x_min, new_x_max)
             ax.set_ylim(new_y_min, new_y_max)
 
         canvas.draw_idle()
+
+
 
 
 
