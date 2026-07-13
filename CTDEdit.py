@@ -66,6 +66,8 @@ def show_column_selector():
         QtWidgets.QMessageBox.warning(Main_Window, "Error", f"Failed to read file:\n{e}")
         return
 
+    units_map = {channel.name: channel.units for channel in pf.file.channels}
+
     # Replace pad values with NaN
     channel_details = pf.file.channel_details
     for i in range(min(len(df.columns), len(channel_details))):
@@ -133,7 +135,7 @@ def show_column_selector():
         dialog.accept()
 
         open_plot_window(df, selected_columns, file_name, file_path,
-                         pf.file.channel_details, y_col)
+                         pf.file.channel_details, y_col, units_map)
 
 
     btn_ok.clicked.connect(on_Plot)
@@ -146,7 +148,7 @@ def show_column_selector():
 
 
 def update_ax(ax, x_vals, y_vals, is_good, col_name, y_col="Pressure",
-              show_mode="all", xlim=None, ylim=None, is_first=True):
+              show_mode="all", xlim=None, ylim=None, is_first=True, unit="", y_unit=""):
     ax.clear()
 
     good = is_good
@@ -160,21 +162,25 @@ def update_ax(ax, x_vals, y_vals, is_good, col_name, y_col="Pressure",
         ax.scatter(x_vals[bad], y_vals[bad], s=5, color='red', label="Excluded")
 
     ax.set_title(col_name)
-    ax.set_xlabel(col_name)
+    ax.set_xlabel(unit if unit else " ")
+
     # Only the leftmost subplot shows the shared y-axis label and tick labels.
     # On the others, suppressing both removes the gap between panels.
     if is_first:
-        ax.set_ylabel(y_col)
-        # With a shared y-axis, inverting once on the first subplot
-        # propagates to all the others. Inverting on every subplot would
-        # toggle it back and forth — odd subplot count = inverted,
-        # even count = not inverted. Always invert exactly once.
-        ax.invert_yaxis()
+        ax.set_ylabel(f"{y_col} ({y_unit})" if y_unit else y_col)
+        ax.invert_yaxis()         # With a shared y-axis, inverting once on the first subplot propagates to all the others.
+
+        fig = ax.figure
+        for lg in fig.legends[:]:  # remove any previous figure-level legend first to avoid stacking copies.
+            lg.remove()
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc="lower left",
+                   bbox_to_anchor=(0.0, 0.0), fontsize=8, markerscale=1.5,
+                   handletextpad=0.2, borderpad=0.3, labelspacing=0.3)
     else:
         ax.set_ylabel("")
         ax.tick_params(labelleft=False)
     ax.grid(True)
-    ax.legend()
 
     # Apply explicit limits AFTER everything else so legend/tight_layout/etc.
     # can't trigger an autoscale snap-back.
@@ -185,9 +191,12 @@ def update_ax(ax, x_vals, y_vals, is_good, col_name, y_col="Pressure",
 
 
 def open_plot_window(df, selected_columns, file_name, file_path,
-                     channel_details, y_col="Pressure"):
+                     channel_details, y_col="Pressure", units_map=None):
     # Mutable container so nested functions can read/update the current mode
     view_state = {"mode": "all"}
+    if units_map is None:
+        units_map = {}
+    y_unit = units_map.get(y_col, "")
 
     def on_scroll(event):
         if event.inaxes is None:
@@ -337,7 +346,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
                       ax.get_title() if ax.get_title() else "",
                       y_col, show_mode=view_state["mode"],
                       xlim=ax.get_xlim(), ylim=ax.get_ylim(),
-                      is_first=pdata["is_first"])
+                      is_first=pdata["is_first"], unit=pdata["unit"], y_unit=y_unit)
             rebuild_selector(pdata_idx)
 
         canvas.draw_idle()
@@ -668,7 +677,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
                       ax.get_title() if ax.get_title() else "",
                       y_col, show_mode=new_mode,
                       xlim=ax.get_xlim(), ylim=ax.get_ylim(),
-                      is_first=pdata["is_first"])
+                      is_first=pdata["is_first"], unit=pdata["unit"], y_unit=y_unit)
             # ax.clear() wiped the box selector for this subplot — rebuild.
             rebuild_selector(pdata_idx)
 
@@ -691,7 +700,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
                       ax.get_title() if ax.get_title() else "",
                       y_col, show_mode=view_state["mode"],
                       xlim=new_xlim, ylim=new_ylim,
-                      is_first=pdata["is_first"])
+                      is_first=pdata["is_first"], unit=pdata["unit"], y_unit=y_unit)
             rebuild_selector(pdata_idx)
 
         canvas.draw_idle()
@@ -1064,7 +1073,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             update_ax(ax, pdata["x"], pdata["y"], pdata["is_good"],
                       pdata["col"], y_col, show_mode=view_state["mode"],
                       xlim=ax.get_xlim(), ylim=ax.get_ylim(),
-                      is_first=pdata["is_first"])
+                      is_first=pdata["is_first"], unit=pdata["unit"], y_unit=y_unit)
             rebuild_selector(pdata_idx)
 
         # Loading is a fresh state, history from the prior session no longer
@@ -1186,10 +1195,12 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             "x_orig": (np.nanmin(x_vals), np.nanmax(x_vals)),
             "y_orig": (np.nanmin(y_vals), np.nanmax(y_vals)),
             "is_first": (i == 0),
+            "unit": units_map.get(col, ""),
         })
 
         update_ax(ax, x_vals, y_vals, is_good, col, y_col,
-                  show_mode=view_state["mode"], is_first=(i == 0))
+                  show_mode=view_state["mode"], is_first=(i == 0),
+                  unit=units_map.get(col, ""), y_unit=y_unit)
 
 
 
