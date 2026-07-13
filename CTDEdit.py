@@ -175,8 +175,8 @@ def update_ax(ax, x_vals, y_vals, is_good, col_name, y_col="Pressure",
             lg.remove()
         handles, labels = ax.get_legend_handles_labels()
         fig.legend(handles, labels, loc="lower left",
-                   bbox_to_anchor=(0.0, 0.0), fontsize=8, markerscale=1.5,
-                   handletextpad=0.2, borderpad=0.3, labelspacing=0.3)
+                   bbox_to_anchor=(0.0, 0.0), fontsize=10, markerscale=2,
+                   handletextpad=0.1, borderpad=0.2, labelspacing=0.2)
     else:
         ax.set_ylabel("")
         ax.tick_params(labelleft=False)
@@ -289,6 +289,39 @@ def open_plot_window(df, selected_columns, file_name, file_path,
 
         canvas.draw_idle()
 
+    def on_zoom_top5():
+        if not plot_data:
+            return
+
+        oy_min, _ = plot_data[0]["y_orig"]
+        y_lo, y_hi = oy_min, oy_min + 5
+        mode = view_state["mode"]
+
+        for pdata in plot_data:
+            ax = pdata["ax"]
+            y_vals = pdata["y"]
+            x_vals = pdata["x"]
+
+            visible_mask = (y_vals >= y_lo) & (y_vals <= y_hi)
+            if mode == "good" and pdata["is_good"].any():
+                visible_mask &= pdata["is_good"]
+            xs_visible = x_vals[visible_mask]
+
+            with np.errstate(all="ignore"):
+                vx_min = np.nanmin(xs_visible) if xs_visible.size else np.nan
+                vx_max = np.nanmax(xs_visible) if xs_visible.size else np.nan
+
+            if np.isfinite(vx_min) and np.isfinite(vx_max):
+                if vx_max > vx_min:
+                    x_pad = (vx_max - vx_min) * 0.15
+                else:
+                    ox_min, ox_max = pdata["x_orig"]
+                    x_pad = (ox_max - ox_min) * 0.05 if ox_max > ox_min else 1.0
+                ax.set_xlim(vx_min - x_pad, vx_max + x_pad)
+
+            ax.set_ylim(y_hi, y_lo)
+
+        canvas.draw_idle()
 
 
 
@@ -1249,6 +1282,8 @@ def open_plot_window(df, selected_columns, file_name, file_path,
     redo_shortcut.activated.connect(on_redo)
     refresh_shortcut = QtWidgets.QShortcut(QKeySequence("Ctrl+Space"), plot_window)
     refresh_shortcut.activated.connect(on_refresh)
+    zoom_top5_shortcut = QtWidgets.QShortcut(QKeySequence("Ctrl+A"), plot_window)
+    zoom_top5_shortcut.activated.connect(on_zoom_top5)
 
     plot_window.show()
 
