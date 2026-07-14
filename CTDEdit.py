@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import datetime
 from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtGui import *
 sys.path.append("C:/Users/ZHANGD/Desktop/All Git Repo/ios-shell")
@@ -755,6 +756,15 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             if reply != QtWidgets.QMessageBox.Yes:
                 return
 
+        export_comment, ok = QtWidgets.QInputDialog.getMultiLineText(
+            plot_window, "Export Comment",
+            "Enter a comment to record with this export (optional):",
+            "",
+        )
+        if not ok:
+            return
+        export_comment = export_comment.strip()
+
         try:
             with open(file_path, "rb") as f:
                 original_bytes = f.read()
@@ -782,6 +792,8 @@ def open_plot_window(df, selected_columns, file_name, file_path,
         if data_start_idx is None:
             QtWidgets.QMessageBox.warning(plot_window, "Export failed","Could not locate '*END OF HEADER' in source file.",)
             return
+
+        header_end_idx = data_start_idx - 1
 
         col_order = list(df.columns)
         n_cols_expected = len(col_order)
@@ -986,6 +998,32 @@ def open_plot_window(df, selected_columns, file_name, file_path,
                 f"Expected {n_rows} data rows but only patched {row_idx}. "
                 "The output file may be incomplete or misaligned.",)
 
+        def build_comment_block(text, ending):
+
+            timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            block = [f" Remarks from CTDEDIT:{ending}"]
+            for line in text.splitlines():
+                block.append(f" {line}{ending}")
+            return block
+
+        if export_comment:
+            # Determine line break
+            header_end_raw = patched_lines[header_end_idx]
+            if header_end_raw.endswith("\r\n"):
+                header_ending = "\r\n"
+            elif header_end_raw.endswith("\n"):
+                header_ending = "\n"
+            else:
+                header_ending = ""
+
+            comment_lines = build_comment_block(export_comment, header_ending)
+
+            patched_lines = (
+                    patched_lines[:header_end_idx]
+                    + comment_lines
+                    + patched_lines[header_end_idx:]
+            )
+
         try:
             # Reassemble and write as bytes — preserves original encoding/EOLs.
             out_text = "".join(patched_lines)
@@ -998,7 +1036,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
         except Exception as e:
             QtWidgets.QMessageBox.warning(
                 plot_window, "Export failed",
-                f"Could not write output file:\n{e}",)
+                f"Could not write output file:\n{e}", )
             return
 
         # Auto-save the flag sidecar so the file can be reopened and re-edited
