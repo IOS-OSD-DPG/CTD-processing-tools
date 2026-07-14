@@ -1001,7 +1001,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
         def build_comment_block(text, ending):
 
             timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-            block = [f" Remarks from CTDEDIT:({timestamp}):{ending}"]
+            block = [f" Remarks from CTDEDIT ({timestamp}):{ending}"]
             for line in text.splitlines():
                 block.append(f" {line}{ending}")
             return block
