@@ -835,13 +835,22 @@ def open_plot_window(df, selected_columns, file_name, file_path,
         col_order = list(df.columns)
         n_cols_expected = len(col_order)
 
+        def _width_from_detail(detail):
+            if detail.width:
+                return detail.width
+            # Width wasn't given in the header -- it's encoded in the Format
+            # field instead, e.g. "F9.4" -> 9, "I8" -> 8.
+            m = re.search(r"\d+", detail.format)
+            return int(m.group()) if m else 0
+
         # Per-column width and decimal places from channel_details,
-        col_widths = [channel_details[i].width if i < len(channel_details) else 0 for i in range(n_cols_expected)]
-        col_decimals = [channel_details[i].decimal_places if i < len(channel_details) else 0 for i in range(n_cols_expected)]
+        col_widths = [_width_from_detail(channel_details[i]) if i < len(channel_details) else 0 for i in
+                      range(n_cols_expected)]
+        col_decimals = [channel_details[i].decimal_places if i < len(channel_details) else 0 for i in
+                        range(n_cols_expected)]
         spec_total_width = sum(col_widths)
 
         patched_lines = list(original_lines)
-
 
         def compute_new_minmax():
             """Return list of (new_min, new_max) per column index
@@ -849,11 +858,19 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             """
             results = []
             for ci in range(n_cols_expected):
-                col_name = col_order[ci]        #column name
-                values = df.iloc[:, ci].values  #column value
-                flags = df_flags[col_name]      #column flag
+                col_name = col_order[ci]  # column name
 
-                with np.errstate(invalid="ignore"): #invalid value is ignnored
+                # Date/Time columns hold datetime.date/datetime.time objects, not
+                # floats -- skip min/max recompute for them, header values are left as-is.
+                col_type = channel_details[ci].type.strip().upper() if ci < len(channel_details) else ""
+                if col_type in ("D", "T", "DT"):
+                    results.append(None)
+                    continue
+
+                values = df.iloc[:, ci].values  # column value
+                flags = df_flags[col_name]  # column flag
+
+                with np.errstate(invalid="ignore"):  # invalid value is ignnored
                     finite = ~np.isnan(values.astype(float, copy=False))
                     not_pad = ~np.isclose(values, -99.0)
 
