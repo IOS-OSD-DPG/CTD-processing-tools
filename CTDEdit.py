@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import re
 import datetime
 from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtGui import *
@@ -323,6 +324,36 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             ax.set_ylim(y_hi, y_lo)
 
         canvas.draw_idle()
+
+
+    PAN_STEP = 0.1  # fraction of current x/y range to shift per key press
+
+    def pan_view(dx_step=0.0, dy_step=0.0):
+        if not plot_data:
+            return
+        for pdata in plot_data:
+            ax = pdata["ax"]
+            x_min, x_max = ax.get_xlim()
+            y_min, y_max = ax.get_ylim()
+            x_shift = (x_max - x_min) * dx_step
+            y_shift = (y_max - y_min) * dy_step
+            ax.set_xlim(x_min + x_shift, x_max + x_shift)
+            ax.set_ylim(y_min + y_shift, y_max + y_shift)
+        canvas.draw_idle()
+
+    def on_pan_left():
+        pan_view(dx_step=-PAN_STEP)
+
+    def on_pan_right():
+        pan_view(dx_step=PAN_STEP)
+
+    def on_pan_down():
+        # y-axis is inverted (surface at top), so "up" means toward
+        # smaller pressure values -> shift the window down in data terms.
+        pan_view(dy_step=-PAN_STEP)
+
+    def on_pan_up():
+        pan_view(dy_step=PAN_STEP)
 
 
 
@@ -794,6 +825,12 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             return
 
         header_end_idx = data_start_idx - 1
+        col_header_idx = None
+        for i in range(header_end_idx):
+            if re.match(r"^!-+1-+", original_lines[i].strip()):
+                col_header_idx = i
+                break
+        comment_insert_idx = col_header_idx if col_header_idx is not None else header_end_idx
 
         col_order = list(df.columns)
         n_cols_expected = len(col_order)
@@ -1008,10 +1045,10 @@ def open_plot_window(df, selected_columns, file_name, file_path,
 
         if export_comment:
             # Determine line break
-            header_end_raw = patched_lines[header_end_idx]
-            if header_end_raw.endswith("\r\n"):
+            insert_ref_raw = patched_lines[comment_insert_idx]
+            if insert_ref_raw.endswith("\r\n"):
                 header_ending = "\r\n"
-            elif header_end_raw.endswith("\n"):
+            elif insert_ref_raw.endswith("\n"):
                 header_ending = "\n"
             else:
                 header_ending = ""
@@ -1019,9 +1056,9 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             comment_lines = build_comment_block(export_comment, header_ending)
 
             patched_lines = (
-                    patched_lines[:header_end_idx]
+                    patched_lines[:comment_insert_idx]
                     + comment_lines
-                    + patched_lines[header_end_idx:]
+                    + patched_lines[comment_insert_idx:]
             )
 
         try:
@@ -1322,6 +1359,15 @@ def open_plot_window(df, selected_columns, file_name, file_path,
     refresh_shortcut.activated.connect(on_refresh)
     zoom_top5_shortcut = QtWidgets.QShortcut(QKeySequence("Ctrl+A"), plot_window)
     zoom_top5_shortcut.activated.connect(on_zoom_top5)
+
+    pan_left_shortcut = QtWidgets.QShortcut(QKeySequence("A"), plot_window)
+    pan_left_shortcut.activated.connect(on_pan_left)
+    pan_right_shortcut = QtWidgets.QShortcut(QKeySequence("D"), plot_window)
+    pan_right_shortcut.activated.connect(on_pan_right)
+    pan_up_shortcut = QtWidgets.QShortcut(QKeySequence("W"), plot_window)
+    pan_up_shortcut.activated.connect(on_pan_up)
+    pan_down_shortcut = QtWidgets.QShortcut(QKeySequence("S"), plot_window)
+    pan_down_shortcut.activated.connect(on_pan_down)
 
     plot_window.show()
 
