@@ -838,15 +838,21 @@ def open_plot_window(df, selected_columns, file_name, file_path,
         def _width_from_detail(detail):
             if detail.width:
                 return detail.width
-            # Width wasn't given in the header -- it's encoded in the Format
-            # field instead, e.g. "F9.4" -> 9, "I8" -> 8.
+            # Width wasn't given in the header -- it's encoded in the Format field instead, e.g. "F9.4" -> 9, "I8" -> 8.
             m = re.search(r"\d+", detail.format)
             return int(m.group()) if m else 0
+
+        def _decimals_from_detail(detail):
+            if detail.decimal_places:
+                return detail.decimal_places
+            # Decimal_Places wasn't given in the header, ios_shell then defaults it to 0, but the precision is really encoded in the Format field instead, e.g. "F9.4" -> 4, "F10.5" -> 5.
+            m = re.search(r"\.(\d+)", detail.format)
+            return int(m.group(1)) if m else 0  #whole match as .4, group(1) explicit, from the one set of parentheses
 
         # Per-column width and decimal places from channel_details,
         col_widths = [_width_from_detail(channel_details[i]) if i < len(channel_details) else 0 for i in
                       range(n_cols_expected)]
-        col_decimals = [channel_details[i].decimal_places if i < len(channel_details) else 0 for i in
+        col_decimals = [_decimals_from_detail(channel_details[i]) if i < len(channel_details) else 0 for i in
                         range(n_cols_expected)]
         spec_total_width = sum(col_widths)
 
@@ -1213,6 +1219,31 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             msg += f"\n\nSkipped {len(skipped_cols)} column(s) not in current data."
         QtWidgets.QMessageBox.information(plot_window, "Flags loaded", msg)
 
+    def on_show_shortcuts():
+        shortcuts = [
+            ("←", "Pan left"),
+            ("→", "Pan right"),
+            ("↑", "Pan up"),
+            ("↓", "Pan down"),
+            ("Ctrl+↑", "Zoom to first 5 units of y-range"),
+            ("Ctrl+Space", "Refresh plot"),
+            ("", ""),
+            ("Ctrl+Z", "Undo last edit"),
+            ("Ctrl+Shift+Z", "Redo"),
+        ]
+
+        rows = "".join(
+            f"<tr><td>{key}</td><td style='padding-left:20px;'>{desc}</td></tr>"
+            for key, desc in shortcuts
+        )
+
+        box = QtWidgets.QMessageBox(plot_window)
+        box.setWindowTitle("Keyboard Shortcuts")
+        box.setTextFormat(QtCore.Qt.RichText)
+        box.setText(f"<table>{rows}</table>")
+        box.setStandardButtons(QtWidgets.QMessageBox.Close)
+        box.exec_()
+
 
     if not selected_columns:
         QtWidgets.QMessageBox.warning(Main_Window, "Warning", "No columns selected")
@@ -1357,6 +1388,8 @@ def open_plot_window(df, selected_columns, file_name, file_path,
     refresh_btn.clicked.connect(on_refresh)
     export_btn.clicked.connect(on_export)
     load_flags_btn.clicked.connect(on_load_flags)
+    plot_window.actionShortcuts.triggered.connect(on_show_shortcuts)
+
 
 
     setup_box_selectors()
@@ -1374,16 +1407,16 @@ def open_plot_window(df, selected_columns, file_name, file_path,
     redo_shortcut.activated.connect(on_redo)
     refresh_shortcut = QtWidgets.QShortcut(QKeySequence("Ctrl+Space"), plot_window)
     refresh_shortcut.activated.connect(on_refresh)
-    zoom_top5_shortcut = QtWidgets.QShortcut(QKeySequence("Ctrl+A"), plot_window)
+    zoom_top5_shortcut = QtWidgets.QShortcut(QKeySequence("Ctrl+Up"), plot_window)
     zoom_top5_shortcut.activated.connect(on_zoom_top5)
 
-    pan_left_shortcut = QtWidgets.QShortcut(QKeySequence("A"), plot_window)
+    pan_left_shortcut = QtWidgets.QShortcut(QKeySequence("Left"), plot_window)
     pan_left_shortcut.activated.connect(on_pan_left)
-    pan_right_shortcut = QtWidgets.QShortcut(QKeySequence("D"), plot_window)
+    pan_right_shortcut = QtWidgets.QShortcut(QKeySequence("Right"), plot_window)
     pan_right_shortcut.activated.connect(on_pan_right)
-    pan_up_shortcut = QtWidgets.QShortcut(QKeySequence("W"), plot_window)
+    pan_up_shortcut = QtWidgets.QShortcut(QKeySequence("Up"), plot_window)
     pan_up_shortcut.activated.connect(on_pan_up)
-    pan_down_shortcut = QtWidgets.QShortcut(QKeySequence("S"), plot_window)
+    pan_down_shortcut = QtWidgets.QShortcut(QKeySequence("Down"), plot_window)
     pan_down_shortcut.activated.connect(on_pan_down)
 
     plot_window.show()
