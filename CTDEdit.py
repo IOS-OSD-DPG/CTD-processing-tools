@@ -854,6 +854,11 @@ def open_plot_window(df, selected_columns, file_name, file_path,
                       range(n_cols_expected)]
         col_decimals = [_decimals_from_detail(channel_details[i]) if i < len(channel_details) else 0 for i in
                         range(n_cols_expected)]
+
+        for i in range(n_cols_expected):
+            if channel_details[i].type.strip().upper() == "T" and col_decimals[i] == 0:
+                col_decimals[i] = 7
+
         spec_total_width = sum(col_widths)
 
         patched_lines = list(original_lines)
@@ -865,11 +870,36 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             results = []
             for ci in range(n_cols_expected):
                 col_name = col_order[ci]  # column name
-
-                # Date/Time columns hold datetime.date/datetime.time objects, not
-                # floats -- skip min/max recompute for them, header values are left as-is.
                 col_type = channel_details[ci].type.strip().upper() if ci < len(channel_details) else ""
-                if col_type in ("D", "T", "DT"):
+
+                if col_type == "D":
+                    values = df.iloc[:, ci].values
+                    mask = df_flags[col_name]
+                    good = [d for d, ok in zip(values, mask) if ok and d is not None]
+                    if not good:
+                        results.append(None)
+                    else:
+                        doy = [d.timetuple().tm_yday for d in good]
+                        results.append((float(min(doy)), float(max(doy))))
+                    continue
+
+                # Time columns hold datetime.time objects -- report min/max as the
+                # fraction of a full day elapsed (e.g. 23:59:55 -> 0.9999421).
+                if col_type == "T":
+                    values = df.iloc[:, ci].values
+                    mask = df_flags[col_name]
+                    good = [t for t, ok in zip(values, mask) if ok and t is not None]
+                    if not good:
+                        results.append(None)
+                    else:
+                        frac = [
+                            (t.hour * 3600 + t.minute * 60 + t.second + t.microsecond / 1e6) / 86400
+                            for t in good
+                        ]
+                        results.append((float(min(frac)), float(max(frac))))
+                    continue
+
+                if col_type == "DT":
                     results.append(None)
                     continue
 
@@ -892,6 +922,8 @@ def open_plot_window(df, selected_columns, file_name, file_path,
 
 
         def format_minmax(value, decimals):
+            if value == 0:  # zero is always written bare, e.g. Time min "0" not "0.0000000"
+                return "0"
             if decimals <= 0:  #if ios_shell cannot parse a decimal, the default is 0
                 return str(int(round(value)))
             return f"{value:.{decimals}f}"
