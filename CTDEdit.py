@@ -371,6 +371,15 @@ def open_plot_window(df, selected_columns, file_name, file_path,
     # Tracks current state of the "Batch edit mode" checkbox.
     batch_state = {"enabled": False}
 
+    # Tracks the currently-open T-S plot window (if any), so edits made in
+    # the main plot windows can push a live refresh to it instead of it
+    # only ever showing a snapshot from when it was opened.
+    ts_plot_state = {"window": None, "canvas": None, "ax": None,
+                      "sal_col": None, "temp_col": None,
+                      "x_orig": None, "y_orig": None}
+    ts_pan_state = {"active": False, "start_x": None, "start_y": None,
+                     "start_xlim": None, "start_ylim": None}
+
     def apply_changes(changes, use="new"):
         """Apply a changes dict to df_flags and refresh affected subplots.
 
@@ -415,6 +424,14 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             rebuild_selector(pdata_idx)
 
         canvas.draw_idle()
+
+        # If the T-S window is open and either of its columns was just
+        # edited, push a live refresh so it doesn't go stale.
+        if ts_plot_state["window"] is not None and (
+            ts_plot_state["sal_col"] in affected_cols
+            or ts_plot_state["temp_col"] in affected_cols
+        ):
+            refresh_ts_plot()
 
     def build_changes(source_pdata_idx, point_indices, target_value):
         """Build a changes dict for setting given point indices to target_value.
@@ -1246,10 +1263,317 @@ def open_plot_window(df, selected_columns, file_name, file_path,
 
         canvas.draw_idle()
 
+        refresh_ts_plot()
+
         msg = f"Loaded flags for {loaded_cols} columns from\n{load_path}"
         if skipped_cols:
             msg += f"\n\nSkipped {len(skipped_cols)} column(s) not in current data."
         QtWidgets.QMessageBox.information(plot_window, "Flags loaded", msg)
+
+    def compute_ts_bounds(sal_col, temp_col):
+
+        x_vals = df[sal_col].values
+        y_vals = df[temp_col].values
+        with np.errstate(all="ignore"):
+            x_min, x_max = np.nanmin(x_vals), np.nanmax(x_vals)
+            y_min, y_max = np.nanmin(y_vals), np.nanmax(y_vals)
+        return (x_min, x_max), (y_min, y_max)
+
+    def on_ts_scroll(event):
+        ax = ts_plot_state["ax"]
+        if ax is None or event.inaxes != ax:
+            return
+
+        base_scale = 1.15
+        if event.button == 'up':
+            scale = 1 / base_scale  # zoom in
+        elif event.button == 'down':
+            scale = base_scale  # zoom out
+        else:
+            return
+
+        def clamp_window(new_a, new_b, lo, hi):
+            w_min, w_max = (new_a, new_b) if new_a < new_b else (new_b, new_a)
+            width = w_max - w_min
+            allowed = hi - lo
+            if width >= allowed:
+                w_min, w_max = lo, hi
+            elif w_min < lo:
+                w_max += (lo - w_min)
+                w_min = lo
+            elif w_max > hi:
+                w_min -= (w_max - hi)
+                w_max = hi
+            return w_min, w_max
+
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
+        x_anchor, y_anchor = event.xdata, event.ydata
+
+        new_x_min = x_anchor + (x_min - x_anchor) * scale
+        new_x_max = x_anchor + (x_max - x_anchor) * scale
+        new_y_min = y_anchor + (y_min - y_anchor) * scale
+        new_y_max = y_anchor + (y_max - y_anchor) * scale
+
+        ox_min, ox_max = ts_plot_state["x_orig"]
+        oy_min, oy_max = ts_plot_state["y_orig"]
+        x_pad = (ox_max - ox_min) * 0.05 if ox_max > ox_min else 1.0
+        y_pad = (oy_max - oy_min) * 0.05 if oy_max > oy_min else 1.0
+
+        new_x_min, new_x_max = clamp_window(new_x_min, new_x_max, ox_min - x_pad, ox_max + x_pad)
+        new_y_min, new_y_max = clamp_window(new_y_min, new_y_max, oy_min - y_pad, oy_max + y_pad)
+
+        ax.set_xlim(new_x_min, new_x_max)
+        ax.set_ylim(new_y_min, new_y_max)
+        ts_plot_state["canvas"].draw_idle()
+
+    def on_ts_pan_press(event):
+        ax = ts_plot_state["ax"]
+        if event.button != 3 or event.inaxes is None or event.inaxes != ax:
+            return
+        ts_pan_state["active"] = True
+        ts_pan_state["start_x"] = event.xdata
+        ts_pan_state["start_y"] = event.ydata
+        ts_pan_state["start_xlim"] = ax.get_xlim()
+        ts_pan_state["start_ylim"] = ax.get_ylim()
+        try:
+            ts_plot_state["canvas"].setCursor(QtCore.Qt.ClosedHandCursor)
+        except Exception:
+            pass
+
+    def on_ts_pan_motion(event):
+        if not ts_pan_state["active"]:
+            return
+        if event.xdata is None or event.ydata is None:
+            return  # cursor left the axes; keep drag alive but skip this frame
+
+        ax = ts_plot_state["ax"]
+        x_min0, x_max0 = ts_pan_state["start_xlim"]
+        y_min0, y_max0 = ts_pan_state["start_ylim"]
+        x_span = x_max0 - x_min0
+        y_span = y_max0 - y_min0
+        if x_span == 0 or y_span == 0:
+            return
+
+        shift_x = -(event.xdata - ts_pan_state["start_x"])
+        shift_y = -(event.ydata - ts_pan_state["start_y"])
+
+        ox_min, ox_max = ts_plot_state["x_orig"]
+        oy_min, oy_max = ts_plot_state["y_orig"]
+        x_pad = (ox_max - ox_min) * 0.05 if ox_max > ox_min else 1.0
+        y_pad = (oy_max - oy_min) * 0.05 if oy_max > oy_min else 1.0
+        x_lo, x_hi = ox_min - x_pad, ox_max + x_pad
+        y_lo, y_hi = oy_min - y_pad, oy_max + y_pad
+
+        # Clamp so the drag can't push the view past the data bounds + padding.
+        if shift_x < x_lo - x_min0:
+            shift_x = x_lo - x_min0
+        if shift_x > x_hi - x_max0:
+            shift_x = x_hi - x_max0
+        if shift_y < y_lo - y_min0:
+            shift_y = y_lo - y_min0
+        if shift_y > y_hi - y_max0:
+            shift_y = y_hi - y_max0
+
+        ax.set_xlim(x_min0 + shift_x, x_max0 + shift_x)
+        ax.set_ylim(y_min0 + shift_y, y_max0 + shift_y)
+        ts_plot_state["canvas"].draw_idle()
+
+    def on_ts_pan_release(event):
+        if event.button != 3:
+            return
+        ts_pan_state["active"] = False
+        try:
+            ts_plot_state["canvas"].unsetCursor()
+        except Exception:
+            pass
+
+    TS_PAN_STEP = 0.1  # fraction of current x/y range to shift per key press
+
+    def ts_pan_view(dx_step=0.0, dy_step=0.0):
+        ax = ts_plot_state["ax"]
+        if ax is None:
+            return
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
+        x_shift = (x_max - x_min) * dx_step
+        y_shift = (y_max - y_min) * dy_step
+        ax.set_xlim(x_min + x_shift, x_max + x_shift)
+        ax.set_ylim(y_min + y_shift, y_max + y_shift)
+        ts_plot_state["canvas"].draw_idle()
+
+    def on_ts_reset_view():
+        """Zoom back out to the full data extent (plus padding)."""
+        ax = ts_plot_state["ax"]
+        if ax is None:
+            return
+        ox_min, ox_max = ts_plot_state["x_orig"]
+        oy_min, oy_max = ts_plot_state["y_orig"]
+        x_pad = (ox_max - ox_min) * 0.05 if ox_max > ox_min else 1.0
+        y_pad = (oy_max - oy_min) * 0.05 if oy_max > oy_min else 1.0
+        ax.set_xlim(ox_min - x_pad, ox_max + x_pad)
+        ax.set_ylim(oy_min - y_pad, oy_max + y_pad)
+        ts_plot_state["canvas"].draw_idle()
+
+    def draw_ts_scatter(ax, sal_col, temp_col, keep_limits=False):
+
+        xlim = ax.get_xlim() if keep_limits else None
+        ylim = ax.get_ylim() if keep_limits else None
+
+        ax.clear()
+
+        x_vals = df[sal_col].values
+        y_vals = df[temp_col].values
+        is_good = df_flags[sal_col] & df_flags[temp_col]
+
+        ax.scatter(x_vals[is_good], y_vals[is_good], s=5, color='blue', label="Included")
+        ax.scatter(x_vals[~is_good], y_vals[~is_good], s=5, color='red', label="Excluded")
+
+        sal_unit = units_map.get(sal_col, "")
+        temp_unit = units_map.get(temp_col, "")
+        ax.set_xlabel(f"{sal_col} ({sal_unit})" if sal_unit else sal_col)
+        ax.set_ylabel(f"{temp_col} ({temp_unit})" if temp_unit else temp_col)
+        ax.set_title(f"T-S Plot - {file_name}")
+        ax.grid(True)
+        ax.legend(loc="best", fontsize=9, markerscale=2)
+
+        if keep_limits and xlim is not None:
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+
+    def refresh_ts_plot():
+        """Redraw the T-S plot window (if one is open) to reflect the
+        current df_flags, preserving the user's current zoom/pan."""
+        if ts_plot_state["window"] is None:
+            return
+        draw_ts_scatter(ts_plot_state["ax"], ts_plot_state["sal_col"],
+                         ts_plot_state["temp_col"], keep_limits=True)
+        ts_plot_state["canvas"].draw_idle()
+
+    def open_ts_plot_window(sal_col, temp_col):
+
+        if ts_plot_state["window"] is not None:
+            ts_plot_state["sal_col"] = sal_col
+            ts_plot_state["temp_col"] = temp_col
+            ts_plot_state["x_orig"], ts_plot_state["y_orig"] = compute_ts_bounds(sal_col, temp_col)
+            draw_ts_scatter(ts_plot_state["ax"], sal_col, temp_col)
+            ts_plot_state["ax"].figure.tight_layout()
+            ts_plot_state["canvas"].draw_idle()
+            ts_plot_state["window"].raise_()
+            ts_plot_state["window"].activateWindow()
+            return
+
+        ts_window = QtWidgets.QMainWindow(plot_window)
+        ts_window.setWindowTitle(f"T-S Plot - {file_name}")
+        ts_window.resize(600, 600)
+        Main_Window.plot_windows.append(ts_window)
+
+        central = QtWidgets.QWidget()
+        ts_window.setCentralWidget(central)
+        v_layout = QtWidgets.QVBoxLayout(central)
+
+        ts_fig = Figure()
+        ts_canvas = FigureCanvas(ts_fig)
+        v_layout.addWidget(ts_canvas)
+
+        reset_btn = QtWidgets.QPushButton("Reset View")
+        v_layout.addWidget(reset_btn)
+
+        ts_ax = ts_fig.add_subplot(1, 1, 1)
+
+        ts_plot_state["window"] = ts_window
+        ts_plot_state["canvas"] = ts_canvas
+        ts_plot_state["ax"] = ts_ax
+        ts_plot_state["sal_col"] = sal_col
+        ts_plot_state["temp_col"] = temp_col
+        ts_plot_state["x_orig"], ts_plot_state["y_orig"] = compute_ts_bounds(sal_col, temp_col)
+
+        draw_ts_scatter(ts_ax, sal_col, temp_col)
+        ts_fig.tight_layout()
+        ts_canvas.draw()
+
+        ts_canvas.mpl_connect("scroll_event", on_ts_scroll)
+        ts_canvas.mpl_connect("button_press_event", on_ts_pan_press)
+        ts_canvas.mpl_connect("motion_notify_event", on_ts_pan_motion)
+        ts_canvas.mpl_connect("button_release_event", on_ts_pan_release)
+
+        reset_btn.clicked.connect(on_ts_reset_view)
+
+        ts_reset_shortcut = QtWidgets.QShortcut(QKeySequence("Ctrl+Space"), ts_window)
+        ts_reset_shortcut.activated.connect(on_ts_reset_view)
+        ts_pan_left_shortcut = QtWidgets.QShortcut(QKeySequence("Left"), ts_window)
+        ts_pan_left_shortcut.activated.connect(lambda: ts_pan_view(dx_step=-TS_PAN_STEP))
+        ts_pan_right_shortcut = QtWidgets.QShortcut(QKeySequence("Right"), ts_window)
+        ts_pan_right_shortcut.activated.connect(lambda: ts_pan_view(dx_step=TS_PAN_STEP))
+        ts_pan_up_shortcut = QtWidgets.QShortcut(QKeySequence("Up"), ts_window)
+        ts_pan_up_shortcut.activated.connect(lambda: ts_pan_view(dy_step=TS_PAN_STEP))
+        ts_pan_down_shortcut = QtWidgets.QShortcut(QKeySequence("Down"), ts_window)
+        ts_pan_down_shortcut.activated.connect(lambda: ts_pan_view(dy_step=-TS_PAN_STEP))
+
+        def on_ts_close(event):
+            # Clear the tracked state so future edits stop trying to draw
+            # onto a window that no longer exists, and so the menu action
+            # opens a fresh window next time instead of reusing a dead one.
+            ts_plot_state["window"] = None
+            ts_plot_state["canvas"] = None
+            ts_plot_state["ax"] = None
+            ts_plot_state["sal_col"] = None
+            ts_plot_state["temp_col"] = None
+            ts_plot_state["x_orig"] = None
+            ts_plot_state["y_orig"] = None
+            event.accept()
+
+        ts_window.closeEvent = on_ts_close
+
+        ts_window.show()
+
+    def on_show_TS_plot():
+
+        temp_candidates = [c for c in df.columns if "temperature" in c.lower()]
+        sal_candidates = [c for c in df.columns if "salinity" in c.lower()]
+
+        if not temp_candidates or not sal_candidates:
+            QtWidgets.QMessageBox.warning(
+                plot_window, "T-S Plot",
+                "Could not find both Temperature and Salinity columns in this file.",
+            )
+            return
+
+        default_temp = temp_candidates[0]
+        default_sal = sal_candidates[0]
+
+        if len(temp_candidates) == 1 and len(sal_candidates) == 1:
+            open_ts_plot_window(default_sal, default_temp)
+            return
+
+        # Ambiguous (e.g. Primary/Secondary sensors) -- let the user choose.
+        dialog = QtWidgets.QDialog(plot_window)
+        dialog.setWindowTitle("Select T-S Columns")
+        dialog.resize(300, 160)
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        layout.addWidget(QtWidgets.QLabel("Temperature (Y axis):"))
+        temp_combo = QtWidgets.QComboBox()
+        temp_combo.addItems(temp_candidates)
+        temp_combo.setCurrentText(default_temp)
+        layout.addWidget(temp_combo)
+
+        layout.addWidget(QtWidgets.QLabel("Salinity (X axis):"))
+        sal_combo = QtWidgets.QComboBox()
+        sal_combo.addItems(sal_candidates)
+        sal_combo.setCurrentText(default_sal)
+        layout.addWidget(sal_combo)
+
+        btn_ok = QtWidgets.QPushButton("Plot")
+        layout.addWidget(btn_ok)
+
+        def on_ok():
+            dialog.accept()
+            open_ts_plot_window(sal_combo.currentText(), temp_combo.currentText())
+
+        btn_ok.clicked.connect(on_ok)
+        dialog.exec_()
+
 
     def on_show_shortcuts():
         shortcuts = [
@@ -1421,6 +1745,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
     export_btn.clicked.connect(on_export)
     load_flags_btn.clicked.connect(on_load_flags)
     plot_window.actionShortcuts.triggered.connect(on_show_shortcuts)
+    plot_window.actionShow_T_S_Plot.triggered.connect(on_show_TS_plot)
 
 
 

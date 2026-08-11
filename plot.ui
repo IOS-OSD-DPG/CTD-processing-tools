@@ -59,12 +59,18 @@
      <string>Tools</string>
     </property>
     <addaction name="actionShortcuts"/>
+    <addaction name="actionShow_T_S_Plot"/>
    </widget>
    <addaction name="menuTools"/>
   </widget>
   <action name="actionShortcuts">
    <property name="text">
     <string>Shortcuts</string>
+   </property>
+  </action>
+  <action name="actionShow_T_S_Plot">
+   <property name="text">
+    <string>Show T/S Plot</string>
    </property>
   </action>
  </widget>
