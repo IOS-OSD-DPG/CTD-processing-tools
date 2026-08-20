@@ -3,9 +3,11 @@ import sys
 import json
 import re
 import datetime
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, uic, QtCore
 from PyQt5.QtGui import *
+#sys.path.append("C:/Users/ZHANGD/Desktop/All Git Repo/ios-shell")
 import ios_shell
+import yaml
 import pandas as pd
 import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -18,93 +20,15 @@ import seawater as sw
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1" #Enable High DPI scaling
 
 
-class MainWindowUI(QtWidgets.QMainWindow):
-    """Hand-coded replacement for main.ui — builds the same widgets/layout
-    that uic.loadUi('main.ui', self) used to produce."""
-
-    def __init__(self, DefaultShow=None):
-        super(MainWindowUI, self).__init__()
-        self.resize(496, 331)
-        self.setWindowTitle("MainWindow")
-
-        centralwidget = QtWidgets.QWidget(self)
-        self.setCentralWidget(centralwidget)
-
-        self.FilePickerButton = QtWidgets.QPushButton(centralwidget)
-        self.FilePickerButton.setObjectName("FilePickerButton")
-        self.FilePickerButton.setGeometry(QtCore.QRect(440, 160, 25, 23))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        self.FilePickerButton.setSizePolicy(sizePolicy)
-        self.FilePickerButton.setMinimumSize(QtCore.QSize(5, 0))
-        self.FilePickerButton.setMaximumSize(QtCore.QSize(25, 16777215))
-        self.FilePickerButton.setText("...")
-
-        self.SelectVariableButton = QtWidgets.QPushButton(centralwidget)
-        self.SelectVariableButton.setObjectName("SelectVariableButton")
-        self.SelectVariableButton.setGeometry(QtCore.QRect(390, 230, 75, 23))
-        self.SelectVariableButton.setText("Enter")
-
-        self.FilePathLineEntry = QtWidgets.QLineEdit(centralwidget)
-        self.FilePathLineEntry.setObjectName("FilePathLineEntry")
-        self.FilePathLineEntry.setGeometry(QtCore.QRect(30, 160, 401, 19))
-
-        self.Icon_Label = QtWidgets.QLabel(centralwidget)
-        self.Icon_Label.setObjectName("Icon_Label")
-        self.Icon_Label.setGeometry(QtCore.QRect(30, 50, 281, 81))
-        self.Icon_Label.setText('<html><head/><body><p><span style=" font-size:36pt;">CTD Edit</span></p></body></html>')
-        self.Icon_Label.setTextFormat(QtCore.Qt.RichText)
-        self.Icon_Label.setScaledContents(True)
-
-        if DefaultShow == True:
+class Ui(QtWidgets.QMainWindow):
+    def __init__(self, path, DefaultShow=None):
+        super(Ui, self).__init__()  # Call the inherited classes __init__ method
+        uic.loadUi(path, self)  # Load the .ui file
+        if DefaultShow==True:
             self.show()
 
-
-class PlotWindowUI(QtWidgets.QMainWindow):
-    """Hand-coded replacement for plot.ui — builds the same widgets/layout
-    that uic.loadUi('plot.ui', plot_window) used to produce."""
-
-    def __init__(self):
-        super(PlotWindowUI, self).__init__()
-        self.resize(1070, 545)
-        self.setMinimumSize(QtCore.QSize(600, 400))
-        self.setWindowTitle("MainWindow")
-
-        centralwidget = QtWidgets.QWidget(self)
-        self.setCentralWidget(centralwidget)
-
-        centralLayout = QtWidgets.QVBoxLayout(centralwidget)
-        centralLayout.setObjectName("centralLayout")
-        centralLayout.setContentsMargins(20, 20, 20, 20)
-
-        self.plotContainer = QtWidgets.QWidget(centralwidget)
-        self.plotContainer.setObjectName("plotContainer")
-        containerSizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        containerSizePolicy.setHorizontalStretch(0)
-        containerSizePolicy.setVerticalStretch(0)
-        self.plotContainer.setSizePolicy(containerSizePolicy)
-        centralLayout.addWidget(self.plotContainer)
-
-        self.menuBar = QtWidgets.QMenuBar(self)
-        self.menuBar.setGeometry(QtCore.QRect(0, 0, 1070, 22))
-        self.setMenuBar(self.menuBar)
-
-        self.menuTools = QtWidgets.QMenu(self.menuBar)
-        self.menuTools.setTitle("Tools")
-
-        self.actionShortcuts = QtWidgets.QAction(self)
-        self.actionShortcuts.setText("Shortcuts")
-        self.actionShow_T_S_Plot = QtWidgets.QAction(self)
-        self.actionShow_T_S_Plot.setText("Show T-S Plot")
-
-        self.menuTools.addAction(self.actionShortcuts)
-        self.menuTools.addAction(self.actionShow_T_S_Plot)
-        self.menuBar.addAction(self.menuTools.menuAction())
-
-
 app = QtWidgets.QApplication(sys.argv)  # Create an instance of QtWidgets.QApplication
-Main_Window = MainWindowUI(DefaultShow=True)
+Main_Window = Ui(path='main.ui',DefaultShow=True)
 
 Main_Window.plot_windows = []
 #adding an attribute to main window, later when plots window are created, reference/store here
@@ -113,7 +37,7 @@ Main_Window.plot_windows = []
 File_Picker_Button = Main_Window.findChild(QtWidgets.QPushButton, 'FilePickerButton')
 File_Path_Entry=Main_Window.findChild(QtWidgets.QLineEdit, 'FilePathLineEntry')
 Select_Variable_Button = Main_Window.findChild(QtWidgets.QPushButton, 'SelectVariableButton')
-#File_Path_Entry.setText("C:/Users/ZHANGD/Downloads/2023-080-0041.del")
+File_Path_Entry.setText("C:/Users/ZHANGD/Downloads/2023-080-0041.del")
 
 selected_columns = []
 
@@ -610,7 +534,7 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             x0, x1 = sorted([eclick.xdata, erelease.xdata])
             y0, y1 = sorted([eclick.ydata, erelease.ydata])
 
-            # Ignore empty boxes
+            # Ignore degenerate boxes (a click without drag)
             if x1 - x0 == 0 or y1 - y0 == 0:
                 return
 
@@ -619,28 +543,31 @@ def open_plot_window(df, selected_columns, file_name, file_path,
             y_vals = pdata["y"]
             is_good = pdata["is_good"]
 
-            in_box = (
-                (x_vals >= x0) & (x_vals <= x1) &
-                (y_vals >= y0) & (y_vals <= y1)
-            )
-
+            # Revive mode flips bad -> good. Default mode flips good -> bad.
+            # In both cases we only act on points whose current state differs
+            # from the target, so unaffected points stay untouched.
+            # nan-safe: NaN comparisons are False, which excludes NaN points.
             if revive_state["enabled"]:
+                inside = (
+                    (x_vals >= x0) & (x_vals <= x1) &
+                    (y_vals >= y0) & (y_vals <= y1) &
+                    ~is_good
+                )
                 target_value = True
-                if batch_state["enabled"]:
-                    inside = in_box
-                else:
-                    inside = in_box & ~is_good
             else:
+                inside = (
+                    (x_vals >= x0) & (x_vals <= x1) &
+                    (y_vals >= y0) & (y_vals <= y1) &
+                    is_good
+                )
                 target_value = False
-                if batch_state["enabled"]:
-                    inside = in_box
-                else:
-                    inside = in_box & is_good
 
             indices = np.flatnonzero(inside).tolist()
             if not indices:
                 return
 
+            # Build changes: set these indices to target_value in this subplot,
+            # propagated to all subplots if batch mode is on.
             changes = build_changes(pdata_idx, indices, target_value=target_value)
             if changes:
                 apply_changes(changes, use="new")
@@ -1699,7 +1626,8 @@ def open_plot_window(df, selected_columns, file_name, file_path,
         return
 
 
-    plot_window = PlotWindowUI()
+    plot_window = QtWidgets.QMainWindow()
+    uic.loadUi("plot.ui", plot_window)
     Main_Window.plot_windows.append(plot_window)
     plot_window.setWindowTitle(file_name)
 

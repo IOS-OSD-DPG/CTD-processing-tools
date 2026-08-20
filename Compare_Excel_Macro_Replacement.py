@@ -22,7 +22,7 @@ csv_path = "C:/Users/ZHANGD/Downloads/2024-002-dox-comp1.csv"
 plot_title = "Interactive Oxygen Difference Plot"
 Axis_Title_X = "Secondary OXY_SBE Avg"
 Axis_Title_Y = "Oxygen Difference (S - P)"
-Data_Pairs = [2,3,4,5,6,7]
+Data_Pairs = [6]
 
 # Read header rows to form column names
 with open(csv_path, newline='') as f:
